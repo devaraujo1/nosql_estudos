@@ -184,7 +184,7 @@ Lembrar: o MongoDB é schemaless. Na mesma coleção um documento pode ter campo
 
 ## 6. Prática no mongosh — loja_informatica
 
-Comandos da aula, na ordem que o professor passou. O slide do CRUD:
+Comandos da aula. O slide do CRUD:
 
 ![CRUD operations](imagens/crud-operations.png)
 
