@@ -24,7 +24,7 @@ Dependendo de como os dados são organizados e acessados, as soluções NoSQL di
 
 ---
 
-## 🍃 2. O que é o MongoDB e Como Ele Funciona?
+## 👃 2. O que é o MongoDB e Como Ele Funciona?
 
 O nome **"Mongo"** vem da palavra em inglês **Humongous** (que significa "Gigante") [3]. Isso reflete seu propósito principal: armazenar e gerenciar gigantescos volumes de dados de maneira altamente eficiente [3].
 
@@ -38,9 +38,9 @@ Ao contrário dos bancos relacionais (como MySQL ou PostgreSQL), que usam tabela
 ┌───────────────────────────────────────────────────────────────┐
 │                    TABELA RELACIONAL (SQL)                    │
 │  ID   │      Nome      │    Idade    │        Cidade          │
-├───────┼────────────────┼─────────────┼────────────────────────┤
+├───────┼────────────────┼────────────┼────────────────────────┤
 │   1   │     Jefté      │     33      │       Salvador         │
-└───────┴────────────────┴─────────────┴────────────────────────┘
+└───────┴────────────────┴────────────┴────────────────────────┘
 
                                VS
 
@@ -115,7 +115,7 @@ Para interagir com o MongoDB via prompt/terminal, utilizamos o shell do MongoDB 
 | `show databases` ou `show dbs` | Lista todos os bancos de dados ativos no servidor [11]. |
 | `use <nome_do_banco>` | Cria ou alterna para o banco de dados especificado (ex: `use shop`) [11]. |
 | `show collections` | Exibe as coleções existentes dentro do banco atual [11]. |
-| `db.createCollection("<nome>")` | Cria explicitamente uma nova coleção (opcional) [11]. |
+| `db.createCollection(" ")` | Cria explicitamente uma nova coleção (opcional) [11]. |
 | `db.<coleção>.insertOne({ ... })` | Insere um único documento em uma coleção [11]. |
 | `db.<coleção>.find()` | Lista todos os documentos de uma coleção [11]. |
 
@@ -178,3 +178,136 @@ Exclui registros da coleção:
 
 ---
 💡 *Dica de Ouro para a prova:* Lembre-se de que o MongoDB é **schemaless** (sem esquema estrito), o que significa que documentos dentro da mesma coleção podem possuir campos totalmente diferentes sem quebrar a estrutura do banco de dados!
+
+---
+
+## 🏪 6. Prática no mongosh: banco `loja_informatica`
+
+Esta seção registra a **atividade prática** da disciplina: subir o `mongosh`, montar um banco de exemplo e exercitar o CRUD na coleção `cliente`. Os métodos abaixo são os mesmos do mapa de operações da aula (Create, Read, Update e Delete).
+
+```
+┌─────────────────────────────┐   ┌─────────────────────────────────┐
+│  C  Create                  │   │  U  Update                       │
+│  insertOne(data, options)   │   │  updateOne(filter, data, options)│
+│  insertMany(data, options)  │   │  updateMany(filter, data, options)│
+│                             │   │  replaceOne(filter, data, options)│
+├─────────────────────────────┤   ├─────────────────────────────────┤
+│  R  Read                    │   │  D  Delete                       │
+│  find(filter, options)      │   │  deleteOne(filter, options)      │
+│  findOne(filter, options)   │   │  deleteMany(filter, options)     │
+└─────────────────────────────┘   └─────────────────────────────────┘
+```
+
+> **Como ler a assinatura:** `data` é o documento (ou o conjunto de alterações); `filter` escolhe *quais* documentos entram na operação; `options` é opcional (por exemplo, `ordered` no `insertMany`).
+
+### 📂 Banco de dados e coleção
+
+Antes do CRUD propriamente dito, o shell precisa saber **em qual banco** você está e **qual coleção** vai receber os documentos.
+
+```javascript
+// Lista os bancos existentes no servidor
+show databases
+
+// Entra no banco (cria o contexto; o arquivo no disco só “aparece”
+// de verdade depois da primeira escrita, como na nota da seção 2)
+use loja_informatica
+
+// Cria a coleção explicitamente (opcional: insertOne também cria)
+db.createCollection("cliente")
+
+// Confere o que existe neste banco
+show collections
+```
+
+### ➕ Create — inserir documentos
+
+Um documento no MongoDB é um objeto JSON. Campos podem ser tipos simples, **arrays** (`pets`) e **objetos aninhados** (`endereco`), no mesmo espírito da seção 3.
+
+```javascript
+// Um único documento (objeto)
+db.cliente.insertOne({
+  "nome": "jefté",
+  "idade": 35,
+  "pets": ["dora", "sabrina"],
+  "endereco": {
+    "logradouro": "Sossego"
+  }
+})
+
+// Vários documentos de uma vez (array de objetos)
+db.cliente.insertMany([
+  { "nome": "Brenno" },
+  { "nome": "João" },
+  { "nome": "Maria" },
+  { "nome": "José" },
+  { "nome": "Noé" }
+])
+```
+
+> Como a coleção é **schemaless**, o primeiro cliente tem `idade`, `pets` e `endereco`, e os demais têm só `nome`. Isso é esperado — não “quebra” o banco.
+
+### 🔍 Read — listar e filtrar
+
+```javascript
+// Todos os documentos da coleção
+db.cliente.find()
+
+// Filtro por campo (equivalente a um WHERE nome = 'José')
+db.cliente.find({ "nome": "José" })
+
+// Apenas o primeiro que bater com o filtro
+db.cliente.findOne({ "nome": "José" })
+
+// Filtro pelo identificador único gerado pelo MongoDB
+db.cliente.find({
+  _id: ObjectId("6a7bbab007ff2cf8649f68a9")
+})
+```
+
+O `_id` da sua máquina será **outro**. Copie o valor que o `insertOne` / `find()` devolveram; o `ObjectId(...)` do exemplo é só o formato da consulta.
+
+Para leitura mais legível no shell, use `.pretty()` no final: `db.cliente.find().pretty()`.
+
+### 🔄 Update — alterar o que já existe
+
+Na prática da loja, o `filter` aponta o cliente; o segundo argumento usa operadores (`$set`) para **não apagar** os outros campos.
+
+```javascript
+// Atualiza só o primeiro documento que corresponder
+db.cliente.updateOne(
+  { "nome": "jefté" },
+  { $set: { "idade": 36, "endereco.logradouro": "Rua do Sossego" } }
+)
+
+// Atualiza todos que baterem com o filtro
+db.cliente.updateMany(
+  { "nome": { $in: ["João", "José"] } },
+  { $set: { "origem": "insertMany" } }
+)
+
+// Troca o documento inteiro (o _id permanece)
+db.cliente.replaceOne(
+  { "nome": "Noé" },
+  { "nome": "Noé", "idade": 40, "status": "ativo" }
+)
+```
+
+### ❌ Delete — remover documentos
+
+```javascript
+// Remove o primeiro que corresponder ao filtro
+db.cliente.deleteOne({ "nome": "Brenno" })
+
+// Remove todos que corresponderem (cuidado em produção)
+db.cliente.deleteMany({ "origem": "insertMany" })
+```
+
+### 🧠 Ordem mental na prova / no laboratório
+
+1. `use` define o banco → `db` passa a apontar para ele.
+2. `db.cliente` é a coleção; o método (`insertOne`, `find`, …) é a letra do CRUD.
+3. **Create** manda `data`. **Read / Update / Delete** quase sempre começam pelo `filter`.
+4. `One` = primeiro match; `Many` = todos os matches.
+
+---
+💡 *Dica de ouro (prática):* `show databases` **não** lista um banco vazio. Se você fez só `use loja_informatica` e ainda não inseriu nada, o nome pode não aparecer na lista — isso não é erro; insira um documento e rode `show databases` de novo.
