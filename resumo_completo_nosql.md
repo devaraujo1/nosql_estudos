@@ -275,3 +275,201 @@ db.cliente.find({
 Esse `_id` é exemplo. O meu vai ser outro — copiar o que o `insertOne` ou o `find()` devolver.
 
 `show databases` não mostra banco vazio. Se eu só dei `use` e ainda não inseri nada, o nome pode não aparecer. Normal.
+
+---
+
+## 7. Relacionamentos no MongoDB (1:1, 1:N, N:M)
+
+Aula 3 — modelagem e schemas. No SQL a gente liga tabelas com FK e JOIN. No MongoDB a decisão é outra: **embarcar** (embedded) ou **referenciar** (references com `ObjectId`).
+
+![Embedded vs References](imagens/relations-overview.png)
+
+| Abordagem | Ideia | Quando faz sentido |
+| :--- | :--- | :--- |
+| **Embedded** (documento incorporado) | O dado relacionado fica **dentro** do documento principal | Dados que pertencem juntos, lidos juntos, sem compartilhar muito |
+| **References** (`ObjectId`) | Coleções separadas; um doc guarda o `_id` do outro | Dados com vida própria, compartilhados, ou que podem crescer sem limite |
+
+### Perguntas antes de modelar
+
+O slide manda pensar nisso antes de sair criando coleção:
+
+1. **Quais dados são necessários?** — campos e como se relacionam  
+2. **Onde o dado é consumido?** — define as coleções / agrupamentos  
+3. **Qual o tipo de exibição?** — quais consultas vão ser mais comuns  
+4. **Qual a frequência de leitura/escrita?** — otimiza busca rápida ou gravação sem duplicar
+
+### Leitura pesada vs escrita pesada
+
+| Cenário | Objetivo | Prioriza |
+| :--- | :--- | :--- |
+| **Muitas consultas (read-heavy)** | Dado já no formato que o frontend usa | **Embedded** — menos JOIN / `$lookup` em tempo de execução |
+| **Muitas gravações (write-heavy)** | Evitar duplicação e atualizar em um lugar só | **References** — um `_id` em comum, atualiza um doc |
+
+Exemplos do slide: catálogo / home → embedded. Pedidos financeiros / logs → referência.
+
+---
+
+### One-to-one (1:1) — um para um
+
+Um paciente ↔ um resumo. Uma pessoa ↔ um carro “principal”. Cada lado liga só a um do outro.
+
+![One-to-one](imagens/one-to-one.png)
+
+#### Embarcado
+
+Paciente + resumo de doenças no **mesmo** documento. Os dados pertencem ao paciente e são lidos juntos.
+
+```javascript
+db.patients.insertOne({
+  name: "Jefté",
+  age: 35,
+  diseaseSummary: {
+    diseases: ["cold", "broken leg"]
+  }
+})
+```
+
+`diseaseSummary` é um documento dentro do documento. Sem segunda coleção, sem join.
+
+#### Por referência
+
+Pessoa e carro em coleções **separadas**. O carro guarda o `_id` do dono. Cada um tem vida própria na aplicação.
+
+```javascript
+db.persons.insertOne({
+  name: "Jefté",
+  age: 35,
+  salary: 3000
+})
+
+db.cars.insertOne({
+  model: "BMW",
+  price: 40000,
+  owner: ObjectId("6aa9e2cee9c288ce1241317e")
+})
+```
+
+> O `ObjectId(...)` do `owner` tem que ser o `_id` real da pessoa. Depois do `insertOne` em `persons`, copiar o `insertedId` e colar no carro.
+
+---
+
+### One-to-many (1:N) — um para muitos
+
+Um tópico tem várias respostas. Uma cidade tem vários cidadãos.
+
+![One-to-many — tópicos e respostas](imagens/one-to-many-threads.png)
+
+![One-to-many — cidades e cidadãos](imagens/one-to-many-cities.png)
+
+#### Embarcado
+
+Respostas dentro do próprio tópico. Bom quando o “muitos” é um array que não explode de tamanho.
+
+```javascript
+db.questionThreads.insertOne({
+  creator: "Jefté",
+  question: "How does that work?",
+  answers: [
+    { text: "Like that." },
+    { text: "Thanks!" }
+  ]
+})
+```
+
+Um documento, várias respostas no array `answers`.
+
+#### Por referência
+
+Cidade numa coleção; cidadãos em outra, cada um com `cityId`. Evita estourar o limite de **16MB** por documento se forem milhões de cidadãos.
+
+```javascript
+db.cities.insertOne({
+  name: "New York City",
+  coordinates: { lat: 21, lng: 55 }
+})
+
+db.citizens.insertMany([
+  { name: "Jefté Goes", cityId: ObjectId("5b98d6b44d01c52e1637a99f") },
+  { name: "Brenno Salvador", cityId: ObjectId("5b98d6b44d01c52e1637a99f") }
+])
+```
+
+Os dois cidadãos apontam para o **mesmo** `_id` da cidade → 1 cidade, N cidadãos.
+
+---
+
+### Many-to-many (N:M) — muitos para muitos
+
+Cliente ↔ vários produtos. Livro ↔ vários autores (e o autor em vários livros).
+
+![Many-to-many — clientes e produtos](imagens/many-to-many-customers.png)
+
+![Many-to-many — livros e autores](imagens/many-to-many-books.png)
+
+#### Embarcado
+
+Pedidos “congelados” dentro do cliente. O histórico daquele momento fica no documento (título, preço, quantidade).
+
+```javascript
+db.customers.insertOne({
+  name: "Jefté",
+  age: 35
+})
+
+db.customers.updateOne(
+  {},
+  {
+    $set: {
+      orders: [
+        { title: "A Book", price: 12.99, quantity: 2 }
+      ]
+    }
+  }
+)
+```
+
+`updateOne({}, ...)` pega o **primeiro** documento da coleção (filtro vazio). Em aula serve; no dia a dia eu filtraria por `name` ou `_id`.
+
+#### Por referência
+
+Autores e livros em coleções separadas. O livro guarda um **array de ObjectIds** dos autores — relacionamento cruzado sem duplicar o autor inteiro em cada livro.
+
+```javascript
+db.authors.insertMany([
+  { name: "Jorge Amado", age: 78, address: { street: "Bahia" } },
+  { name: "Graciliano Ramos", age: 55, address: { street: "Rio de Janeiro" } }
+])
+
+db.books.updateOne(
+  {},
+  {
+    $set: {
+      authors: [
+        ObjectId("5b98d9e44d01c52e1637a9a6"),
+        ObjectId("5b98d9e44d01c52e1637a9a7")
+      ]
+    }
+  }
+)
+```
+
+Cada `ObjectId` no array `authors` é o `_id` de um autor. Um livro → vários autores; um autor pode aparecer em vários livros.
+
+---
+
+### Comparativo rápido: Embedded vs References
+
+| Característica | Documentos incorporados | Referências (`ObjectId`) |
+| :--- | :--- | :--- |
+| **Organização** | Tudo no mesmo documento | Dados em coleções distintas |
+| **Caso de uso** | Dados que pertencem juntos, sem se sobrepor | Dados compartilhados ou com vida própria |
+| **Desempenho** | Leitura ótima (uma consulta, sem join) | Escrita sem duplicar; atualiza em um lugar |
+| **Limitações** | Limite de **16MB** por documento | Precisa de consulta extra ou `$lookup` |
+
+### Regra prática (do slide)
+
+*   **Use Embedded** quando: dados acessados juntos, forte pertencimento, pouco compartilhamento, tamanho do doc sob controle.  
+*   **Use References** quando: dados compartilhados, vida independente, crescimento sem teto fixo, ou N:M mais complexo.  
+*   **Ajuste fino:** olhar o uso real do sistema — equilíbrio leitura vs escrita.
+
+Lembrar: não existe “sempre embutir” nem “sempre referenciar”. O modelo segue a pergunta da aplicação.
